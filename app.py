@@ -1,9 +1,6 @@
 import streamlit as st
 
-from chatbot import FocusCoachBot
-
-
-BOT = FocusCoachBot()
+from chatbot import FocusCoachBot, OpenRouterError
 
 
 def ensure_state() -> None:
@@ -51,6 +48,11 @@ def inject_styles() -> None:
 def render_sidebar() -> None:
     with st.sidebar:
         st.header("Focus Prompts")
+        try:
+            bot = FocusCoachBot()
+            st.caption(f"Model: {bot.model}")
+        except OpenRouterError:
+            st.caption("Model: not configured")
         for prompt in [
             "I need a plan to finish my project",
             "motivate me",
@@ -71,8 +73,17 @@ def render_messages() -> None:
 
 def handle_prompt(prompt: str) -> None:
     st.session_state.messages.append({"role": "user", "content": prompt})
-    reply = BOT.reply(prompt)
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+    try:
+        bot = FocusCoachBot()
+        history = [
+            {"role": message["role"], "content": message["content"]}
+            for message in st.session_state.messages
+            if message["role"] in {"user", "assistant"}
+        ]
+        reply = bot.reply(history)
+        st.session_state.messages.append({"role": "assistant", "content": reply})
+    except OpenRouterError as exc:
+        st.session_state.messages.append({"role": "assistant", "content": f"Configuration/API error: {exc}"})
 
 
 def main() -> None:
@@ -94,6 +105,11 @@ def main() -> None:
     )
     render_sidebar()
     render_messages()
+    try:
+        FocusCoachBot()
+    except OpenRouterError as exc:
+        st.error(f"Set OPENROUTER_API_KEY before chatting. {exc}")
+        st.stop()
     if prompt := st.chat_input("State the task."):
         handle_prompt(prompt)
         st.rerun()

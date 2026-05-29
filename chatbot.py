@@ -1,24 +1,43 @@
+import os
+
+import requests
+
+
+class OpenRouterError(Exception):
+    pass
+
+
 class FocusCoachBot:
-    def reply(self, message: str) -> str:
-        text = message.strip().lower()
+    def __init__(self):
+        self.api_key = os.getenv("OPENROUTER_API_KEY")
+        if not self.api_key:
+            raise OpenRouterError("OPENROUTER_API_KEY is required.")
+        self.model = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-r1-0528:free")
+        self.system_prompt = (
+            "You are a direct, structured, no-fluff focus coach chatbot. "
+            "Be concise, actionable, and firm. Push the user toward concrete execution steps."
+        )
 
-        if any(word in text for word in ["plan", "project", "deadline", "finish"]):
-            return (
-                "1. Pick the single project outcome that matters most.\n"
-                "2. Split it into the next two concrete tasks.\n"
-                "3. Finish the first task before you touch anything else."
-            )
+    def reply(self, messages):
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": self.system_prompt}, *messages],
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+        if response.status_code != 200:
+            raise OpenRouterError(f"OpenRouter request failed: {response.status_code} {response.text}")
 
-        if any(word in text for word in ["motivate", "lazy", "stuck", "focus"]):
-            return (
-                "Start before you feel ready. "
-                "Focus on ten clean minutes, remove one distraction, and let momentum do the rest."
-            )
-
-        if any(word in text for word in ["time", "schedule", "routine"]):
-            return (
-                "Block your day in order: deep work first, admin second, noise last. "
-                "If it is not scheduled, it usually does not happen."
-            )
-
-        return "Be specific. Pick one task, one deadline, or one obstacle, and I will help you cut it down."
+        data = response.json()
+        try:
+            return data["choices"][0]["message"]["content"].strip()
+        except (KeyError, IndexError, TypeError):
+            raise OpenRouterError("OpenRouter response was malformed.")
